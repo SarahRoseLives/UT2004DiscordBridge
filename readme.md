@@ -8,3 +8,5 @@ Essentially just enable web admin on your server, update the config.ini file (cr
 Chat will be bridged between a discord channel and your UT2004 server. Enjoy
 
 Note* If you have a pre-existing chat log (started the bot mid-match) then it will forward previous messages so that you are caught up.
+
+![img](ut2004.gif)
