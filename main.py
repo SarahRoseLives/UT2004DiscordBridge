@@ -4,6 +4,9 @@ import configparser
 import os
 import asyncio
 
+import os
+import configparser
+
 # Define paths
 current_directory = os.path.dirname(os.path.abspath(__file__))
 config_file = os.path.join(current_directory, 'config.ini')
@@ -12,11 +15,33 @@ config_file = os.path.join(current_directory, 'config.ini')
 # Load configuration
 def load_config():
     config = configparser.ConfigParser()
+
+    # Check if the config file exists
+    if not os.path.isfile(config_file):
+        # If not, create a new config file with default settings
+        config['BOT'] = {'discord_secret': ''}
+        config['Discord'] = {'channel_id': ''}
+        config['Server'] = {
+            'host': 'localhost',
+            'port': '8080',
+            'user': 'Admin',
+            'pass': 'Admin'
+        }
+
+        with open(config_file, 'w') as configfile:
+            config.write(configfile)
+            print(f"Created a new config file at: {config_file}")
+
+    # Read the config file
     config.read(config_file)
+
+    # Return the discord_secret
     return config['BOT']['discord_secret']
 
-# Get Discord secret from config file
+
+# Example usage
 discord_secret = load_config()
+print(f"Discord Secret: {discord_secret}")
 
 # Intents (required for some features)
 intents = discord.Intents.default()
