@@ -73,6 +73,8 @@ class UT2004Cog(commands.Cog):
         # Ignore messages that start with "Discord: "
         if chat_message.startswith("Discord: "):
             return
+        if "None" in chat_message:
+            return
 
         channel = self.bot.get_channel(self.channel_id)
         if channel:
