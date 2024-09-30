@@ -75,6 +75,8 @@ class UT2004Cog(commands.Cog):
             return
         if "None" in chat_message:
             return
+        if "WebAdmin" in chat_message:
+            return
 
         channel = self.bot.get_channel(self.channel_id)
         if channel:
