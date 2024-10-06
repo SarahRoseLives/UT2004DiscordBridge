@@ -7,6 +7,7 @@ import configparser
 import asyncio
 import random
 
+
 class UT2004Cog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -21,6 +22,10 @@ class UT2004Cog(commands.Cog):
 
         self.socket_server = (self.host, self.port)  # Socket server address
         self.user_colors = {}  # Dictionary to store usernames and their assigned colors
+
+        # Cache for tracking recently sent messages
+        self.recent_messages = set()  # Use a set to store message IDs (or hashes)
+        self.cache_limit = 100  # Set a limit for cache size to avoid excessive memory usage
 
         # Persistent socket connection
         self.conn = None
@@ -57,20 +62,18 @@ class UT2004Cog(commands.Cog):
                                 if message:
                                     try:
                                         message_data = json.loads(message)
-                                        asyncio.run_coroutine_threadsafe(self.forward_to_discord(message_data), self.bot.loop)
+                                        asyncio.run_coroutine_threadsafe(self.forward_to_discord(message_data),
+                                                                         self.bot.loop)
                                     except json.JSONDecodeError as e:
                                         print(f"Failed to parse JSON: {e}")
                     except Exception as e:
                         print(f"Socket error: {e}")
                         break
 
-    @commands.Cog.listener()
-    async def on_message(self, message):
-        """Forwards messages from Discord to the socket server."""
-        if message.channel.id == self.channel_id and not message.author.bot:
-            if not message.content.startswith("Discord: "):
-                # Call the updated send_message_to_socket function with username and message
-                await self.send_message_to_socket(message.author.name, message.content)
+    # Hash function to avoid duplicate messages
+    def get_message_id(self, username, msg):
+        """Generate a unique identifier for each message."""
+        return hash((username, msg))
 
     async def forward_to_discord(self, message_data):
         """Forwards a chat message from the socket server to Discord."""
@@ -78,6 +81,19 @@ class UT2004Cog(commands.Cog):
             username = message_data.get("sender")
             msg = message_data.get("msg")
             team_index = message_data.get("teamIndex", "-1")  # Default to -1 if not provided
+
+            # Generate a unique message ID
+            message_id = self.get_message_id(username, msg)
+
+            # Avoid duplicate messages by checking the cache
+            if message_id in self.recent_messages:
+                print(f"Duplicate message detected, skipping: {username}: {msg}")
+                return
+
+            # If not a duplicate, add to cache and enforce the limit
+            self.recent_messages.add(message_id)
+            if len(self.recent_messages) > self.cache_limit:
+                self.recent_messages.pop()
 
             # Assign color based on the team index
             if team_index == "0":  # Team 0 (Red)
@@ -103,10 +119,27 @@ class UT2004Cog(commands.Cog):
             else:
                 print(f"Channel with ID {self.channel_id} not found.")
 
+    async def reconnect_socket(self):
+        """Attempt to reconnect to the socket server."""
+        for attempt in range(5):  # Try to reconnect 5 times
+            try:
+                print(f"Attempting to reconnect... ({attempt + 1}/5)")
+                s = socket.create_connection(self.socket_server)
+                self.conn = s
+                print("Reconnection successful!")
+                return
+            except Exception as e:
+                print(f"Reconnection failed: {e}")
+                await asyncio.sleep(5)  # Wait before trying again
+
     async def send_message_to_socket(self, username, message_content):
         """Sends a message to the socket server."""
         if not self.conn:
-            print("No socket connection available.")
+            print("No socket connection available. Attempting to reconnect...")
+            await self.reconnect_socket()
+
+        if not self.conn:
+            print("Reconnection failed. Could not send the message.")
             return
 
         try:
@@ -119,12 +152,22 @@ class UT2004Cog(commands.Cog):
         except BrokenPipeError:
             print("Connection lost, attempting to reconnect...")
             self.conn = None  # Reset connection to force a reconnect next time
+            await self.reconnect_socket()  # Attempt reconnection
         except Exception as e:
             print(f"Failed to send message to socket: {e}")
+
+    @commands.Cog.listener()
+    async def on_message(self, message):
+        """Forwards messages from Discord to the socket server."""
+        if message.channel.id == self.channel_id and not message.author.bot:
+            if not message.content.startswith("Discord: "):
+                # Call the updated send_message_to_socket function with username and message
+                await self.send_message_to_socket(message.author.name, message.content)
 
     def get_random_color(self):
         """Generate a random color for usernames."""
         return discord.Color(random.randint(0x000000, 0xFFFFFF))
+
 
 async def setup(bot):
     await bot.add_cog(UT2004Cog(bot))
