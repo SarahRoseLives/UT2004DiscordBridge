@@ -23,9 +23,7 @@ def load_config():
         config['Discord'] = {'channel_id': ''}
         config['Server'] = {
             'host': 'localhost',
-            'port': '8080',
-            'user': 'Admin',
-            'pass': 'Admin'
+            'port': '49321'
         }
 
         with open(config_file, 'w') as configfile:

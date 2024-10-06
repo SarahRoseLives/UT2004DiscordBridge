@@ -2,11 +2,19 @@
 
 That's right, someone decided to create a discord bot for chat on UT2004.
 
+This was originally based on manipulating WebAdmin but thanks to 'TheAstroPath' we now have a mutator to facilitate communication with our bot. I will update this readme with better instructions later but this is enough to get going.
+
+
 ## Setup
 
-Essentially just enable web admin on your server, update the config.ini file (created after first run) and that's it.
-Chat will be bridged between a discord channel and your UT2004 server. Enjoy
+Install the UT2k4DiscordBridge.u and .ucl files into your UT2004 'System' Folder.
+A config ini is created after first run. Class name for the mutator to add to your config is:
 
-Note* If you have a pre-existing chat log (started the bot mid-match) then it will forward previous messages so that you are caught up.
+```UT2k4DiscordBridge.DiscordBridge```
 
-![img](ut2004.gif)
+
+![img](ut2k4.gif)
+
+## Contributors
+
+TheAstroPath: https://github.com/theastropath - Mutator Development

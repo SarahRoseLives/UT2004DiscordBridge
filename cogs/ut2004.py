@@ -1,10 +1,11 @@
 import discord
-from discord.ext import commands, tasks
-import aiohttp
-from bs4 import BeautifulSoup
+from discord.ext import commands
+import socket
+import threading
+import json
 import configparser
-import os
-
+import asyncio
+import random
 
 class UT2004Cog(commands.Cog):
     def __init__(self, bot):
@@ -12,106 +13,118 @@ class UT2004Cog(commands.Cog):
 
         # Load configuration from the parent directory
         self.config = configparser.ConfigParser()
-
         self.config.read('config.ini')
 
-
         self.channel_id = int(self.config['Discord']['channel_id'])  # Load channel ID from config
-        self.username = self.config['Server']['user']  # Load username from config
-        self.password = self.config['Server']['pass']  # Load password from config
-        self.url = f"http://{self.config['Server']['host']}:{self.config['Server']['port']}/ServerAdmin/current_console_log#END"
+        self.host = self.config['Server']['host']  # Load host from config
+        self.port = int(self.config['Server']['port'])  # Load port from config
 
-        self.seen_messages = set()  # Set to track all seen messages
-        self.initialized = False  # Flag to indicate the first run
-        self.check_chat_messages.start()  # Start the background task
+        self.socket_server = (self.host, self.port)  # Socket server address
+        self.user_colors = {}  # Dictionary to store usernames and their assigned colors
+
+        # Persistent socket connection
+        self.conn = None
+        self.socket_thread = threading.Thread(target=self.start_socket_server, daemon=True)
+        self.socket_thread.start()  # Start the socket server in a separate thread
 
     def cog_unload(self):
-        self.check_chat_messages.stop()  # Stop the background task when cog is unloaded
+        # Implement logic to properly close the socket connection if needed
+        if self.conn:
+            self.conn.close()
 
-    @tasks.loop(seconds=2)  # Adjust the frequency as needed
-    async def check_chat_messages(self):
-        async with aiohttp.ClientSession() as session:
-            async with session.get(self.url, auth=aiohttp.BasicAuth(self.username, self.password)) as response:
-                if response.status == 200:
-                    html_content = await response.text()
-                    chat_messages = self.get_chat_messages(html_content)
+    def start_socket_server(self):
+        """Start the socket server to receive messages."""
+        s = socket.create_server(self.socket_server)
 
-                    if not self.initialized:
-                        self.seen_messages.update(chat_messages)  # Add all messages to seen_messages
-                        self.initialized = True  # Mark that initialization is done
-                    else:
-                        # Check for new messages that haven't been seen yet
-                        for chat_message in chat_messages:
-                            clean_message = chat_message.replace("\xa0", " ").strip()  # Normalize message
+        while True:
+            print("Waiting for a connection...")
+            conn, addr = s.accept()
+            print(f"Connected to {addr}")
+            self.conn = conn  # Store the persistent connection
 
-                            # Add new messages to Discord and seen_messages
-                            if clean_message not in self.seen_messages:
-                                await self.forward_to_discord(clean_message)  # Forward new message to Discord
-                                self.seen_messages.add(clean_message)  # Add the new message to seen_messages
-                            else:
-                                print(f"Duplicate message detected, skipping: {clean_message}")  # Debugging line
-                else:
-                    print(f"Failed to retrieve the page. Status code: {response.status}")
+            with conn:
+                while True:
+                    try:
+                        msg_buf = conn.recv(255)
+                        if msg_buf:
+                            u_msg = msg_buf.decode("utf-8").strip()
+                            print(f"Received from socket: {u_msg}")
 
-    def get_chat_messages(self, html_content):
-        soup = BeautifulSoup(html_content, 'html.parser')
-        raw_log = soup.get_text(separator="\n", strip=True)
-        lines = raw_log.split("\n")
+                            # Split the incoming message into individual JSON objects
+                            messages = u_msg.split('\0')
 
-        chat_messages = []
-        for line in lines:
-            line = line.strip()
-            if line.startswith(">"):
-                chat_message = line[1:].strip()  # Removes ">" and any leading spaces
-                if chat_message and ":" in chat_message:
-                    chat_messages.append(chat_message)  # Add only messages with ":"
-
-        print(f"Retrieved chat messages: {chat_messages}")  # Debugging line
-        return chat_messages
-
-    async def forward_to_discord(self, chat_message):
-        # Ignore messages that start with "Discord: "
-        if chat_message.startswith("Discord: "):
-            return
-        if "None" in chat_message:
-            return
-        if "WebAdmin" in chat_message:
-            return
-
-        channel = self.bot.get_channel(self.channel_id)
-        if channel:
-            try:
-                await channel.send(chat_message)  # Send the message to the Discord channel
-                print(f"Message sent to Discord: {chat_message}")  # Debugging line
-            except Exception as e:
-                print(f"Failed to send message to Discord: {e}")  # Error handling for send failures
-        else:
-            print(f"Channel with ID {self.channel_id} not found.")  # Error handling if channel is not found
+                            for message in messages:
+                                if message:
+                                    try:
+                                        message_data = json.loads(message)
+                                        asyncio.run_coroutine_threadsafe(self.forward_to_discord(message_data), self.bot.loop)
+                                    except json.JSONDecodeError as e:
+                                        print(f"Failed to parse JSON: {e}")
+                    except Exception as e:
+                        print(f"Socket error: {e}")
+                        break
 
     @commands.Cog.listener()
     async def on_message(self, message):
-        """Forwards messages from Discord to the game server."""
+        """Forwards messages from Discord to the socket server."""
         if message.channel.id == self.channel_id and not message.author.bot:
-            # Prevent echoing messages sent by the bot itself
             if not message.content.startswith("Discord: "):
-                # Forward message to the chat server with "Discord: " prefix
-                await self.send_message_to_chat_server(f'Discord: {message.author}: {message.content}')
+                # Call the updated send_message_to_socket function with username and message
+                await self.send_message_to_socket(message.author.name, message.content)
 
-    async def send_message_to_chat_server(self, message_content):
-        """Sends a message to the game server."""
-        data = {
-            "SendText": f"say {message_content}",  # Format the message to send to the server
-            "Send": "Send"  # This is the submit button's value
-        }
+    async def forward_to_discord(self, message_data):
+        """Forwards a chat message from the socket server to Discord."""
+        if message_data.get("type") == "Say":
+            username = message_data.get("sender")
+            msg = message_data.get("msg")
+            team_index = message_data.get("teamIndex", "-1")  # Default to -1 if not provided
 
-        url = f"http://{self.config['Server']['host']}:{self.config['Server']['port']}/ServerAdmin/current_console"  # Change this if needed
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, auth=aiohttp.BasicAuth(self.username, self.password), data=data) as response:
-                if response.status == 200:
-                    print("Message sent to the game server successfully!")
-                else:
-                    print(f"Failed to send message. Status code: {response.status}")
+            # Assign color based on the team index
+            if team_index == "0":  # Team 0 (Red)
+                color = discord.Color.red()
+            elif team_index == "1":  # Team 1 (Blue)
+                color = discord.Color.blue()
+            else:  # No team or other values
+                if username not in self.user_colors:
+                    self.user_colors[username] = self.get_random_color()
+                color = self.user_colors[username]
 
+            # Create an embed to colorize the username
+            embed = discord.Embed(description=f"**{username}:** {msg}")
+            embed.color = color
+
+            channel = self.bot.get_channel(self.channel_id)
+            if channel:
+                try:
+                    await channel.send(embed=embed)  # Send the message to the Discord channel
+                    print(f"Message sent to Discord: {username}: {msg}")
+                except Exception as e:
+                    print(f"Failed to send message to Discord: {e}")
+            else:
+                print(f"Channel with ID {self.channel_id} not found.")
+
+    async def send_message_to_socket(self, username, message_content):
+        """Sends a message to the socket server."""
+        if not self.conn:
+            print("No socket connection available.")
+            return
+
+        try:
+            # Construct the message in the required format
+            msg = '{"type":"Discord","sender":"' + username + '","msg":"' + message_content + '"}\0'
+
+            # Send the message to the socket server using the persistent connection
+            self.conn.sendall(msg.encode('utf-8'))
+            print(f"Sent to socket server: {username}: {message_content}")
+        except BrokenPipeError:
+            print("Connection lost, attempting to reconnect...")
+            self.conn = None  # Reset connection to force a reconnect next time
+        except Exception as e:
+            print(f"Failed to send message to socket: {e}")
+
+    def get_random_color(self):
+        """Generate a random color for usernames."""
+        return discord.Color(random.randint(0x000000, 0xFFFFFF))
 
 async def setup(bot):
     await bot.add_cog(UT2004Cog(bot))
