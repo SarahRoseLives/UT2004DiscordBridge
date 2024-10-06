@@ -39,6 +39,8 @@ function BroadcastLocalized( Actor Sender, PlayerController Receiver, class<Loca
             teamId=RelatedPRI_1.Team.TeamIndex;
         }
         mut.SendMsgToDiscord("Kill","Game",Message.Static.GetString(Switch,RelatedPRI_1,RelatedPRI_2,OptionalObject),-1);
+    //} else {
+    //    mut.SendMsgToDiscord("LocalizedMessage",string(Message),Message.Static.GetString(Switch,RelatedPRI_1,RelatedPRI_2,OptionalObject),-1);
     }
     //log("Catching BroadcastLocalized:  Sender "$Sender$"   Receiver: "$Receiver$"   Message: "$Message.Static.GetString(Switch,RelatedPRI_1,RelatedPRI_2,OptionalObject));
 }
