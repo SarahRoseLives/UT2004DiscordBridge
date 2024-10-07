@@ -5,6 +5,10 @@ var config int discord_bridge_port;
 var config bool bBridgeSay;
 var config bool bBridgeTeamSay;
 var config bool bBridgeKills;
+var config int  chatR;
+var config int  chatG;
+var config int  chatB;
+
 var DiscordBridgeLink discordLink;
 var DiscordBridgeBroadcastHandler chatHandler;
 
@@ -47,13 +51,31 @@ static function FillPlayInfo(PlayInfo PlayInfo) {
     PlayInfo.AddSetting("Discord Bridge", "bBridgeSay", "Bridge Regular Messages to Discord", 0, 1, "Check");
     PlayInfo.AddSetting("Discord Bridge", "bBridgeTeamSay", "Bridge Team Messages to Discord", 0, 1, "Check");
     PlayInfo.AddSetting("Discord Bridge", "bBridgeKills", "Bridge Kills to Discord", 0, 1, "Check");
+    PlayInfo.AddSetting("Discord Bridge", "chatR", "Discord Chat Red", 0, 2, "Text","3;1:255");
+    PlayInfo.AddSetting("Discord Bridge", "chatG", "Discord Chat Green", 0, 2, "Text","3;1:255");
+    PlayInfo.AddSetting("Discord Bridge", "chatB", "Discord Chat Blue", 0, 2, "Text","3;1:255");
 
+}
+
+//Ascii character 27, followed by an ascii character containing the R, G, and B values
+//range 1-255 (as far as I can tell) for each
+function string GenerateRGBTextCode(int r, int g, int b)
+{
+    if (r<=0) r=1;
+    if (g<=0) g=1;
+    if (b<=0) b=1;
+
+    if (r>255) r=255;
+    if (g>255) g=255;
+    if (b>255) b=255;
+
+    return chr(27)$chr(r)$chr(g)$chr(b);
 }
 
 function ReceiveMsgFromDiscord(string MsgType, string sender, string msg)
 {
     if (MsgType~="Say" || MsgType!="TeamSay"){
-        Level.Game.Broadcast(self,"[Discord] "$sender$": "$msg);
+        Level.Game.Broadcast(self,GenerateRGBTextCode(chatR,chatG,chatB)$"[Discord] "$sender$": "$msg);
     }
 }
 
@@ -66,10 +88,13 @@ defaultproperties
 {
     bAddToServerPackages=True
     FriendlyName="Discord Bridge"
-    Description="Bridges your in-game chat to a Discord server!"
+    Description="Bridges your in-game chat to a Discord server!||More information at: https://github.com/SarahRoseLives/UT2004DiscordBridge"
     discord_bridge_addr="127.0.0.1"
     bBridgeSay=True
     bBridgeTeamSay=False
     bBridgeKills=False
     discord_bridge_port=49321
+    chatR=224
+    chatG=1
+    chatB=224
 }
