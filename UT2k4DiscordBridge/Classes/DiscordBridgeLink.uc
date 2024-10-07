@@ -72,6 +72,45 @@ simulated function handleMessage(string msg) {
 
 }
 
+function SendHeartbeatResponse(string sender, string msg)
+{
+    local string j, returnMsg;
+    local class<Json> js;
+    local byte jbyte[255];
+    local int i;
+    local bool validSender,validMsg;
+
+    if (sender~="Discord") validSender = true;
+    if (msg~="PING") validMsg = true;
+
+    if (validSender && validMsg){
+        returnMsg="PONG";
+    } else {
+        returnMsg="Invalid Heartbeat -";
+        if (!validSender){
+            returnMsg=returnMsg$" Sender: '"$sender$"'";
+        }
+        if (!validMsg){
+            returnMsg=returnMsg$" Msg: '"$msg$"'";
+        }
+    }
+
+    js = class'Json';
+
+    j = js.static.Start("Heartbeat");
+    js.static.Add(j,"sender","Mutator");
+    js.static.Add(j,"msg",returnMsg);
+    js.static.End(j);
+
+    //log("Sending JSON message to Discord bridge: "$j);
+
+    for (i=0;i<Len(j);i++){
+        jbyte[i]=Asc(Mid(j,i,1));
+    }
+    
+    SendBinary(Len(j)+1,jbyte);
+}
+
 function SendMsgToDiscord(string MsgType, string sender, string msg, int teamIdx)
 {
     local string j;

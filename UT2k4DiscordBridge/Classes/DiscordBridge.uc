@@ -5,6 +5,7 @@ var config int discord_bridge_port;
 var config bool bBridgeSay;
 var config bool bBridgeTeamSay;
 var config bool bBridgeKills;
+var config bool bBridgeFlagCaps;
 var config int  chatR;
 var config int  chatG;
 var config int  chatB;
@@ -51,6 +52,7 @@ static function FillPlayInfo(PlayInfo PlayInfo) {
     PlayInfo.AddSetting("Discord Bridge", "bBridgeSay", "Bridge Regular Messages to Discord", 0, 1, "Check");
     PlayInfo.AddSetting("Discord Bridge", "bBridgeTeamSay", "Bridge Team Messages to Discord", 0, 1, "Check");
     PlayInfo.AddSetting("Discord Bridge", "bBridgeKills", "Bridge Kills to Discord", 0, 1, "Check");
+    PlayInfo.AddSetting("Discord Bridge", "bBridgeFlagCaps", "Bridge Flag Captures to Discord", 0, 1, "Check");
     PlayInfo.AddSetting("Discord Bridge", "chatR", "Discord Chat Red", 0, 2, "Text","3;1:255");
     PlayInfo.AddSetting("Discord Bridge", "chatG", "Discord Chat Green", 0, 2, "Text","3;1:255");
     PlayInfo.AddSetting("Discord Bridge", "chatB", "Discord Chat Blue", 0, 2, "Text","3;1:255");
@@ -74,8 +76,10 @@ function string GenerateRGBTextCode(int r, int g, int b)
 
 function ReceiveMsgFromDiscord(string MsgType, string sender, string msg)
 {
-    if (MsgType~="Say" || MsgType!="TeamSay"){
+    if (MsgType~="Say" || MsgType~="TeamSay"){
         Level.Game.Broadcast(self,GenerateRGBTextCode(chatR,chatG,chatB)$"[Discord] "$sender$": "$msg);
+    } else if (MsgType~="Heartbeat"){
+        discordLink.SendHeartbeatResponse(sender,msg);
     }
 }
 
@@ -93,6 +97,7 @@ defaultproperties
     bBridgeSay=True
     bBridgeTeamSay=False
     bBridgeKills=False
+    bBridgeFlagCaps=False
     discord_bridge_port=49321
     chatR=224
     chatG=1
