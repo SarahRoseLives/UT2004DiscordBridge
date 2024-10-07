@@ -75,9 +75,20 @@ class UT2004Cog(commands.Cog):
         """Generate a unique identifier for each message."""
         return hash((username, msg))
 
+    def get_color_by_team(self, team_index, username=None):
+        """Get color based on team index; random color for unassigned usernames."""
+        if team_index == "0":  # Team 0 (Red)
+            return discord.Color.red()
+        elif team_index == "1":  # Team 1 (Blue)
+            return discord.Color.blue()
+        else:  # No team or other values
+            if username and username not in self.user_colors:
+                self.user_colors[username] = self.get_random_color()
+            return self.user_colors.get(username, discord.Color.dark_gray())  # Default color if no team info
+
     async def forward_to_discord(self, message_data):
         """Forwards a chat or kill message from the socket server to Discord."""
-        # Check if the message is a chat ("Say") or a kill event ("Kill")
+        # Check if the message is a chat ("Say") or a kill event ("Kill") or flag capture ("FlagCap")
         if message_data.get("type") == "Say":
             username = message_data.get("sender")
             msg = message_data.get("msg")
@@ -97,18 +108,10 @@ class UT2004Cog(commands.Cog):
                 self.recent_messages.pop()
 
             # Assign color based on the team index
-            if team_index == "0":  # Team 0 (Red)
-                color = discord.Color.red()
-            elif team_index == "1":  # Team 1 (Blue)
-                color = discord.Color.blue()
-            else:  # No team or other values
-                if username not in self.user_colors:
-                    self.user_colors[username] = self.get_random_color()
-                color = self.user_colors[username]
+            color = self.get_color_by_team(team_index, username)
 
             # Create an embed to colorize the username
-            embed = discord.Embed(description=f"**{username}:** {msg}")
-            embed.color = color
+            embed = discord.Embed(description=f"**{username}:** {msg}", color=color)
 
             channel = self.bot.get_channel(self.channel_id)
             if channel:
@@ -140,12 +143,7 @@ class UT2004Cog(commands.Cog):
                 self.recent_messages.pop()
 
             # Assign color based on the team index, similar to "Say" messages
-            if team_index == "0":  # Team 0 (Red)
-                color = discord.Color.red()
-            elif team_index == "1":  # Team 1 (Blue)
-                color = discord.Color.blue()
-            else:
-                color = discord.Color.dark_gray()  # Default for kill events with no team info
+            color = self.get_color_by_team(team_index)
 
             # Create an embed for the kill event
             embed = discord.Embed(description=f"**{msg}**", color=color)
@@ -157,6 +155,40 @@ class UT2004Cog(commands.Cog):
                     print(f"Kill event sent to Discord: {msg}")
                 except Exception as e:
                     print(f"Failed to send kill event to Discord: {e}")
+            else:
+                print(f"Channel with ID {self.channel_id} not found.")
+
+        elif message_data.get("type") == "FlagCap":
+            # Handle flag capture messages
+            msg = message_data.get("msg")
+            team_index = message_data.get("teamIndex", "-1")  # Default to -1 if not provided
+
+            # Generate a unique message ID for the flag capture event
+            message_id = self.get_message_id("FlagCap", msg)
+
+            # Avoid duplicate messages by checking the cache
+            if message_id in self.recent_messages:
+                print(f"Duplicate flag capture message detected, skipping: {msg}")
+                return
+
+            # If not a duplicate, add to cache and enforce the limit
+            self.recent_messages.add(message_id)
+            if len(self.recent_messages) > self.cache_limit:
+                self.recent_messages.pop()
+
+            # Assign color based on the team index
+            color = self.get_color_by_team(team_index)
+
+            # Create an embed for the flag capture event
+            embed = discord.Embed(description=f"**Flag Capture:** {msg}", color=color)
+
+            channel = self.bot.get_channel(self.channel_id)
+            if channel:
+                try:
+                    await channel.send(embed=embed)  # Send the flag capture message to the Discord channel
+                    print(f"Flag capture event sent to Discord: {msg}")
+                except Exception as e:
+                    print(f"Failed to send flag capture event to Discord: {e}")
             else:
                 print(f"Channel with ID {self.channel_id} not found.")
 
