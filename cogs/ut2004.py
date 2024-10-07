@@ -76,7 +76,8 @@ class UT2004Cog(commands.Cog):
         return hash((username, msg))
 
     async def forward_to_discord(self, message_data):
-        """Forwards a chat message from the socket server to Discord."""
+        """Forwards a chat or kill message from the socket server to Discord."""
+        # Check if the message is a chat ("Say") or a kill event ("Kill")
         if message_data.get("type") == "Say":
             username = message_data.get("sender")
             msg = message_data.get("msg")
@@ -116,6 +117,46 @@ class UT2004Cog(commands.Cog):
                     print(f"Message sent to Discord: {username}: {msg}")
                 except Exception as e:
                     print(f"Failed to send message to Discord: {e}")
+            else:
+                print(f"Channel with ID {self.channel_id} not found.")
+
+        elif message_data.get("type") == "Kill":
+            # Handle death/kill messages
+            game_event = message_data.get("sender", "Game")
+            msg = message_data.get("msg")
+            team_index = message_data.get("teamIndex", "-1")  # Default to -1 if not provided
+
+            # Generate a unique message ID for the kill event
+            message_id = self.get_message_id(game_event, msg)
+
+            # Avoid duplicate messages by checking the cache
+            if message_id in self.recent_messages:
+                print(f"Duplicate kill message detected, skipping: {msg}")
+                return
+
+            # If not a duplicate, add to cache and enforce the limit
+            self.recent_messages.add(message_id)
+            if len(self.recent_messages) > self.cache_limit:
+                self.recent_messages.pop()
+
+            # Assign color based on the team index, similar to "Say" messages
+            if team_index == "0":  # Team 0 (Red)
+                color = discord.Color.red()
+            elif team_index == "1":  # Team 1 (Blue)
+                color = discord.Color.blue()
+            else:
+                color = discord.Color.dark_gray()  # Default for kill events with no team info
+
+            # Create an embed for the kill event
+            embed = discord.Embed(description=f"**{msg}**", color=color)
+
+            channel = self.bot.get_channel(self.channel_id)
+            if channel:
+                try:
+                    await channel.send(embed=embed)  # Send the kill message to the Discord channel
+                    print(f"Kill event sent to Discord: {msg}")
+                except Exception as e:
+                    print(f"Failed to send kill event to Discord: {e}")
             else:
                 print(f"Channel with ID {self.channel_id} not found.")
 
