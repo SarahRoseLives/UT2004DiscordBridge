@@ -7,7 +7,6 @@ import configparser
 import asyncio
 import random
 
-
 class UT2004Cog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -29,13 +28,39 @@ class UT2004Cog(commands.Cog):
 
         # Persistent socket connection
         self.conn = None
+        self.pong_received = True  # Assume PONG is received initially
         self.socket_thread = threading.Thread(target=self.start_socket_server, daemon=True)
         self.socket_thread.start()  # Start the socket server in a separate thread
 
+        # Start the PING loop
+        self.bot.loop.create_task(self.ping_heartbeat())
+
     def cog_unload(self):
-        # Implement logic to properly close the socket connection if needed
+        """Clean up when the cog is unloaded."""
         if self.conn:
             self.conn.close()
+
+    async def ping_heartbeat(self):
+        """Send a PING message every 10 seconds and listen for PONG."""
+        while True:
+            if self.conn:
+                ping_msg = '{"type":"Heartbeat","sender":"Discord","msg":"PING"}\0'
+                try:
+                    self.conn.sendall(ping_msg.encode('utf-8'))
+                    print("Sent PING to socket server.")
+                except Exception as e:
+                    print(f"Failed to send PING: {e}")
+
+                # Wait for 10 seconds to receive PONG
+                await asyncio.sleep(10)
+
+                # If no PONG received, assume socket server has restarted
+                if not self.pong_received:
+                    print("No PONG response received. Attempting to reconnect...")
+                    await self.reconnect_socket()
+                    self.pong_received = True  # Reset flag
+
+            await asyncio.sleep(10)  # Wait for 10 seconds before sending the next PING
 
     def start_socket_server(self):
         """Start the socket server to receive messages."""
@@ -62,15 +87,20 @@ class UT2004Cog(commands.Cog):
                                 if message:
                                     try:
                                         message_data = json.loads(message)
-                                        asyncio.run_coroutine_threadsafe(self.forward_to_discord(message_data),
-                                                                         self.bot.loop)
+
+                                        # Check for PONG response
+                                        if message_data.get("type") == "Heartbeat" and message_data.get("msg") == "PONG":
+                                            print("Received PONG from socket server.")
+                                            self.pong_received = True  # Set flag to indicate PONG received
+
+                                        # Forward the message to Discord
+                                        asyncio.run_coroutine_threadsafe(self.forward_to_discord(message_data), self.bot.loop)
                                     except json.JSONDecodeError as e:
                                         print(f"Failed to parse JSON: {e}")
                     except Exception as e:
                         print(f"Socket error: {e}")
                         break
 
-    # Hash function to avoid duplicate messages
     def get_message_id(self, username, msg):
         """Generate a unique identifier for each message."""
         return hash((username, msg))
@@ -217,7 +247,8 @@ class UT2004Cog(commands.Cog):
 
         try:
             # Construct the message in the required format
-            msg = '{"type":"Discord","sender":"' + username + '","msg":"' + message_content + '"}\0'
+            msg = f'{{"type":"Say","sender":"{username}","msg":"{message_content}"}}\0'
+            print(f"Sending message to socket server: {msg}")
 
             # Send the message to the socket server using the persistent connection
             self.conn.sendall(msg.encode('utf-8'))
@@ -233,8 +264,8 @@ class UT2004Cog(commands.Cog):
     async def on_message(self, message):
         """Forwards messages from Discord to the socket server."""
         if message.channel.id == self.channel_id and not message.author.bot:
+            print(f"Received message from Discord: {message.author.name}: {message.content}")  # Debug line
             if not message.content.startswith("Discord: "):
-                # Call the updated send_message_to_socket function with username and message
                 await self.send_message_to_socket(message.author.name, message.content)
 
     def get_random_color(self):

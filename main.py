@@ -4,9 +4,6 @@ import configparser
 import os
 import asyncio
 
-import os
-import configparser
-
 # Define paths
 current_directory = os.path.dirname(os.path.abspath(__file__))
 config_file = os.path.join(current_directory, 'config.ini')
@@ -46,14 +43,14 @@ intents = discord.Intents.default()
 intents.message_content = True  # Ensure you have this enabled if you want to listen to message content
 
 # Bot setup
-bot = commands.Bot(command_prefix='!', intents=intents)
+class MyBot(commands.Bot):
+    async def setup_hook(self):
+        cogs_directory = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cogs')
+        for filename in os.listdir(cogs_directory):
+            if filename.endswith('.py'):
+                await self.load_extension(f'cogs.{filename[:-3]}')
 
-# Load cogs
-async def load_cogs():
-    cogs_directory = os.path.join(current_directory, 'cogs')
-    for filename in os.listdir(cogs_directory):
-        if filename.endswith('.py'):
-            await bot.load_extension(f'cogs.{filename[:-3]}')
+bot = MyBot(command_prefix='!', intents=intents)
 
 # On ready event
 @bot.event
@@ -62,7 +59,6 @@ async def on_ready():
 
 # Run the bot
 async def main():
-    await load_cogs()  # Load cogs before starting the bot
     try:
         await bot.start(discord_secret)
     except discord.errors.LoginFailure:
