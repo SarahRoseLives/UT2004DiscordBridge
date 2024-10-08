@@ -6,6 +6,8 @@ var config bool bBridgeSay;
 var config bool bBridgeTeamSay;
 var config bool bBridgeKills;
 var config bool bBridgeFlagCaps;
+var config bool bBridgeMatchEnd;
+var config bool bBridgeServerTravel;
 var config int  chatR;
 var config int  chatG;
 var config int  chatB;
@@ -28,6 +30,45 @@ simulated function PreBeginPlay()
     chatHandler = Spawn(class'DiscordBridgeBroadcastHandler');
     chatHandler.Init(self);
     Level.Game.BroadcastHandler.RegisterBroadcastHandler(chatHandler);
+
+    Tag = 'EndGame'; //Lets the bridge receive a notification when the game ends
+}
+
+function Trigger( actor Other, pawn EventInstigator )
+{
+    if (Tag=='EndGame' && bBridgeMatchEnd){
+        SetTimer(0.1,False);
+    }
+}
+
+function Timer() {
+    HandleEndGame();
+}
+
+function HandleEndGame()
+{
+    local int TeamIdx;
+    local string winner;
+    local PlayerReplicationInfo pri;
+    local TeamInfo team;
+
+    if (Level.Game.GameReplicationInfo.Winner!=None){
+        TeamIdx=-1;
+        team = TeamInfo(Level.Game.GameReplicationInfo.Winner);
+        pri = PlayerReplicationInfo(Level.Game.GameReplicationInfo.Winner);
+
+        if (team!=None){
+            TeamIdx=team.TeamIndex;
+            winner = team.GetHumanReadableName();
+        } else if (pri!=None){
+            
+            if (pri.Team!=None){
+                TeamIdx=pri.Team.TeamIndex;
+            }
+            winner=pri.PlayerName;
+        }
+        SendMsgToDiscord("MatchEnd", winner, winner$" has won the match", TeamIdx);
+    }
 }
 
 //This really makes sure the old discordLink is gone, since it seems like it used to kind of persist (despite being transient)
@@ -35,6 +76,10 @@ simulated function PreBeginPlay()
 function ServerTraveling(string URL, bool bItems)
 {
     if (discordLink!=None){
+        if (bBridgeServerTravel){
+            SendMsgToDiscord("ServerTravel","Game",URL,-1);
+        }
+
         discordLink.Close();
         discordLink.Destroy();
         discordLink=None;
@@ -51,8 +96,10 @@ static function FillPlayInfo(PlayInfo PlayInfo) {
     PlayInfo.AddSetting("Discord Bridge", "discord_bridge_port", "Discord Bridge Port", 0, 2, "Text","5;49152:65535");
     PlayInfo.AddSetting("Discord Bridge", "bBridgeSay", "Bridge Regular Messages to Discord", 0, 1, "Check");
     PlayInfo.AddSetting("Discord Bridge", "bBridgeTeamSay", "Bridge Team Messages to Discord", 0, 1, "Check");
-    PlayInfo.AddSetting("Discord Bridge", "bBridgeKills", "Bridge Kills to Discord", 0, 1, "Check");
-    PlayInfo.AddSetting("Discord Bridge", "bBridgeFlagCaps", "Bridge Flag Captures to Discord", 0, 1, "Check");
+    PlayInfo.AddSetting("Discord Bridge", "bBridgeKills", "Notify Discord of Kills", 0, 1, "Check");
+    PlayInfo.AddSetting("Discord Bridge", "bBridgeFlagCaps", "Notify Discord of Flag Captures", 0, 1, "Check");
+    PlayInfo.AddSetting("Discord Bridge", "bBridgeServerTravel", "Notify Discord of Server Travel", 0, 1, "Check");
+    PlayInfo.AddSetting("Discord Bridge", "bBridgeMatchEnd", "Notify Discord of match end results", 0, 1, "Check");
     PlayInfo.AddSetting("Discord Bridge", "chatR", "Discord Chat Red", 0, 2, "Text","3;1:255");
     PlayInfo.AddSetting("Discord Bridge", "chatG", "Discord Chat Green", 0, 2, "Text","3;1:255");
     PlayInfo.AddSetting("Discord Bridge", "chatB", "Discord Chat Blue", 0, 2, "Text","3;1:255");
@@ -76,6 +123,7 @@ function string GenerateRGBTextCode(int r, int g, int b)
 
 function ReceiveMsgFromDiscord(string MsgType, string sender, string msg)
 {
+    //log("Received message from Discord: MsgType: "$MsgType);
     if (MsgType~="Say" || MsgType~="TeamSay"){
         Level.Game.Broadcast(self,GenerateRGBTextCode(chatR,chatG,chatB)$"[Discord] "$sender$": "$msg);
     } else if (MsgType~="Heartbeat"){
@@ -98,6 +146,8 @@ defaultproperties
     bBridgeTeamSay=False
     bBridgeKills=False
     bBridgeFlagCaps=False
+    bBridgeServerTravel=False
+    bBridgeMatchEnd=False
     discord_bridge_port=49321
     chatR=224
     chatG=1
