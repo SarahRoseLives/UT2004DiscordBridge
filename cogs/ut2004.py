@@ -7,6 +7,7 @@ import configparser
 import asyncio
 import random
 
+
 class UT2004Cog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -28,39 +29,13 @@ class UT2004Cog(commands.Cog):
 
         # Persistent socket connection
         self.conn = None
-        self.pong_received = True  # Assume PONG is received initially
         self.socket_thread = threading.Thread(target=self.start_socket_server, daemon=True)
         self.socket_thread.start()  # Start the socket server in a separate thread
 
-        # Start the PING loop
-        self.bot.loop.create_task(self.ping_heartbeat())
-
     def cog_unload(self):
-        """Clean up when the cog is unloaded."""
+        # Implement logic to properly close the socket connection if needed
         if self.conn:
             self.conn.close()
-
-    async def ping_heartbeat(self):
-        """Send a PING message every 10 seconds and listen for PONG."""
-        while True:
-            if self.conn:
-                ping_msg = '{"type":"Heartbeat","sender":"Discord","msg":"PING"}\0'
-                try:
-                    self.conn.sendall(ping_msg.encode('utf-8'))
-                    print("Sent PING to socket server.")
-                except Exception as e:
-                    print(f"Failed to send PING: {e}")
-
-                # Wait for 10 seconds to receive PONG
-                await asyncio.sleep(10)
-
-                # If no PONG received, assume socket server has restarted
-                if not self.pong_received:
-                    print("No PONG response received. Attempting to reconnect...")
-                    await self.reconnect_socket()
-                    self.pong_received = True  # Reset flag
-
-            await asyncio.sleep(10)  # Wait for 10 seconds before sending the next PING
 
     def start_socket_server(self):
         """Start the socket server to receive messages."""
@@ -87,20 +62,15 @@ class UT2004Cog(commands.Cog):
                                 if message:
                                     try:
                                         message_data = json.loads(message)
-
-                                        # Check for PONG response
-                                        if message_data.get("type") == "Heartbeat" and message_data.get("msg") == "PONG":
-                                            print("Received PONG from socket server.")
-                                            self.pong_received = True  # Set flag to indicate PONG received
-
-                                        # Forward the message to Discord
-                                        asyncio.run_coroutine_threadsafe(self.forward_to_discord(message_data), self.bot.loop)
+                                        asyncio.run_coroutine_threadsafe(self.forward_to_discord(message_data),
+                                                                         self.bot.loop)
                                     except json.JSONDecodeError as e:
                                         print(f"Failed to parse JSON: {e}")
                     except Exception as e:
                         print(f"Socket error: {e}")
                         break
 
+    # Hash function to avoid duplicate messages
     def get_message_id(self, username, msg):
         """Generate a unique identifier for each message."""
         return hash((username, msg))
@@ -222,41 +192,22 @@ class UT2004Cog(commands.Cog):
             else:
                 print(f"Channel with ID {self.channel_id} not found.")
 
-    async def reconnect_socket(self):
-        """Attempt to reconnect to the socket server."""
-        for attempt in range(5):  # Try to reconnect 5 times
-            try:
-                print(f"Attempting to reconnect... ({attempt + 1}/5)")
-                s = socket.create_connection(self.socket_server)
-                self.conn = s
-                print("Reconnection successful!")
-                return
-            except Exception as e:
-                print(f"Reconnection failed: {e}")
-                await asyncio.sleep(5)  # Wait before trying again
-
     async def send_message_to_socket(self, username, message_content):
         """Sends a message to the socket server."""
         if not self.conn:
-            print("No socket connection available. Attempting to reconnect...")
-            await self.reconnect_socket()
-
-        if not self.conn:
-            print("Reconnection failed. Could not send the message.")
+            print("No socket connection available. Cannot send the message.")
             return
 
         try:
             # Construct the message in the required format
-            msg = f'{{"type":"Say","sender":"{username}","msg":"{message_content}"}}\0'
-            print(f"Sending message to socket server: {msg}")
+            msg = '{"type":"Say","sender":"' + username + '","msg":"' + message_content + '"}\0'
 
             # Send the message to the socket server using the persistent connection
             self.conn.sendall(msg.encode('utf-8'))
             print(f"Sent to socket server: {username}: {message_content}")
         except BrokenPipeError:
-            print("Connection lost, attempting to reconnect...")
-            self.conn = None  # Reset connection to force a reconnect next time
-            await self.reconnect_socket()  # Attempt reconnection
+            print("Connection lost. Cannot send message.")
+            self.conn = None  # Reset connection to indicate that it's lost
         except Exception as e:
             print(f"Failed to send message to socket: {e}")
 
@@ -264,8 +215,8 @@ class UT2004Cog(commands.Cog):
     async def on_message(self, message):
         """Forwards messages from Discord to the socket server."""
         if message.channel.id == self.channel_id and not message.author.bot:
-            print(f"Received message from Discord: {message.author.name}: {message.content}")  # Debug line
             if not message.content.startswith("Discord: "):
+                # Call the updated send_message_to_socket function with username and message
                 await self.send_message_to_socket(message.author.name, message.content)
 
     def get_random_color(self):
