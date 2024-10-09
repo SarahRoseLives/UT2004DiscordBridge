@@ -23,8 +23,8 @@ class UT2004Cog(commands.Cog):
         self.socket_server = (self.host, self.port)  # Socket server address
         self.user_colors = {}  # Dictionary to store usernames and their assigned colors
 
-        # Cache for tracking recently sent messages
-        self.recent_messages = set()  # Use a set to store message IDs (or hashes)
+        # Cache for tracking recently sent "Say" messages
+        self.recent_say_messages = set()  # Cache for "Say" messages
         self.cache_limit = 100  # Set a limit for cache size to avoid excessive memory usage
 
         # Persistent socket connection
@@ -94,18 +94,18 @@ class UT2004Cog(commands.Cog):
             msg = message_data.get("msg")
             team_index = message_data.get("teamIndex", "-1")  # Default to -1 if not provided
 
-            # Generate a unique message ID
+            # Generate a unique message ID for "Say" messages
             message_id = self.get_message_id(username, msg)
 
-            # Avoid duplicate messages by checking the cache
-            if message_id in self.recent_messages:
-                print(f"Duplicate message detected, skipping: {username}: {msg}")
+            # Avoid duplicate "Say" messages by checking the cache
+            if message_id in self.recent_say_messages:
+                print(f"Duplicate Say message detected, skipping: {username}: {msg}")
                 return
 
             # If not a duplicate, add to cache and enforce the limit
-            self.recent_messages.add(message_id)
-            if len(self.recent_messages) > self.cache_limit:
-                self.recent_messages.pop()
+            self.recent_say_messages.add(message_id)
+            if len(self.recent_say_messages) > self.cache_limit:
+                self.recent_say_messages.pop()
 
             # Assign color based on the team index
             color = self.get_color_by_team(team_index, username)
@@ -132,17 +132,7 @@ class UT2004Cog(commands.Cog):
             # Generate a unique message ID for the kill event
             message_id = self.get_message_id(game_event, msg)
 
-            # Avoid duplicate messages by checking the cache
-            if message_id in self.recent_messages:
-                print(f"Duplicate kill message detected, skipping: {msg}")
-                return
-
-            # If not a duplicate, add to cache and enforce the limit
-            self.recent_messages.add(message_id)
-            if len(self.recent_messages) > self.cache_limit:
-                self.recent_messages.pop()
-
-            # Assign color based on the team index, similar to "Say" messages
+            # Send kill message without duplicate checking
             color = self.get_color_by_team(team_index)
 
             # Create an embed for the kill event
@@ -166,17 +156,7 @@ class UT2004Cog(commands.Cog):
             # Generate a unique message ID for the flag capture event
             message_id = self.get_message_id("FlagCap", msg)
 
-            # Avoid duplicate messages by checking the cache
-            if message_id in self.recent_messages:
-                print(f"Duplicate flag capture message detected, skipping: {msg}")
-                return
-
-            # If not a duplicate, add to cache and enforce the limit
-            self.recent_messages.add(message_id)
-            if len(self.recent_messages) > self.cache_limit:
-                self.recent_messages.pop()
-
-            # Assign color based on the team index
+            # Send flag capture message without duplicate checking
             color = self.get_color_by_team(team_index)
 
             # Create an embed for the flag capture event
