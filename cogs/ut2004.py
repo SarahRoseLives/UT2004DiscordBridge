@@ -39,36 +39,57 @@ class UT2004Cog(commands.Cog):
 
     def start_socket_server(self):
         """Start the socket server to receive messages."""
-        s = socket.create_server(self.socket_server)
-
         while True:
-            print("Waiting for a connection...")
-            conn, addr = s.accept()
-            print(f"Connected to {addr}")
-            self.conn = conn  # Store the persistent connection
+            try:
+                s = socket.create_server(self.socket_server)
+                print("Socket server started, waiting for a connection...")
+                conn, addr = s.accept()
+                print(f"Connected to {addr}")
+                self.conn = conn  # Store the persistent connection
 
-            with conn:
-                while True:
-                    try:
-                        msg_buf = conn.recv(255)
-                        if msg_buf:
-                            u_msg = msg_buf.decode("utf-8").strip()
-                            print(f"Received from socket: {u_msg}")
+                with conn:
+                    while True:
+                        try:
+                            msg_buf = conn.recv(255)
+                            if msg_buf:
+                                u_msg = msg_buf.decode("utf-8").strip()
+                                print(f"Received from socket: {u_msg}")
 
-                            # Split the incoming message into individual JSON objects
-                            messages = u_msg.split('\0')
+                                # Split the incoming message into individual JSON objects
+                                messages = u_msg.split('\0')
 
-                            for message in messages:
-                                if message:
-                                    try:
-                                        message_data = json.loads(message)
-                                        asyncio.run_coroutine_threadsafe(self.forward_to_discord(message_data),
-                                                                         self.bot.loop)
-                                    except json.JSONDecodeError as e:
-                                        print(f"Failed to parse JSON: {e}")
-                    except Exception as e:
-                        print(f"Socket error: {e}")
-                        break
+                                for message in messages:
+                                    if message:
+                                        try:
+                                            message_data = json.loads(message)
+
+                                            # Check for ServerTravel message
+                                            if message_data.get("type") == "ServerTravel":
+                                                print("ServerTravel message received. Disconnecting...")
+                                                self.conn.close()  # Close the current connection
+                                                self.conn = None  # Reset the connection variable
+                                                asyncio.run_coroutine_threadsafe(self.reconnect_socket(), self.bot.loop)
+                                                return  # Exit the loop to stop processing further messages
+
+                                            # Forward the message to Discord
+                                            asyncio.run_coroutine_threadsafe(self.forward_to_discord(message_data), self.bot.loop)
+
+                                        except json.JSONDecodeError as e:
+                                            print(f"Failed to parse JSON: {e}")
+                        except Exception as e:
+                            print(f"Socket error: {e}")
+                            break
+
+            except Exception as e:
+                print(f"Failed to start socket server: {e}")
+                print("Retrying in 5 seconds...")
+                time.sleep(5)  # Wait before retrying to establish the socket server
+
+    async def reconnect_socket(self):
+        """Reconnect to the socket server after 20 seconds."""
+        await asyncio.sleep(20)  # Wait for 20 seconds
+        print("Attempting to reconnect to the socket server...")
+        self.start_socket_server()  # Attempt to restart the socket server
 
     # Hash function to avoid duplicate messages
     def get_message_id(self, username, msg):
@@ -88,7 +109,7 @@ class UT2004Cog(commands.Cog):
 
     async def forward_to_discord(self, message_data):
         """Forwards a chat or kill message from the socket server to Discord."""
-        # Check if the message is a chat ("Say") or a kill event ("Kill") or flag capture ("FlagCap")
+        # Check if the message is a chat ("Say"), kill event ("Kill"), flag capture ("FlagCap"), or match end ("MatchEnd")
         if message_data.get("type") == "Say":
             username = message_data.get("sender")
             msg = message_data.get("msg")
@@ -169,6 +190,28 @@ class UT2004Cog(commands.Cog):
                     print(f"Flag capture event sent to Discord: {msg}")
                 except Exception as e:
                     print(f"Failed to send flag capture event to Discord: {e}")
+            else:
+                print(f"Channel with ID {self.channel_id} not found.")
+
+        elif message_data.get("type") == "MatchEnd":
+            # Handle match end messages
+            winner_team = message_data.get("sender")  # This will be "Red" or "Blue"
+            msg = message_data.get("msg")
+            team_index = message_data.get("teamIndex")  # Get the team index from the message
+
+            # Get the color based on the winning team's index
+            color = self.get_color_by_team(team_index)
+
+            # Create an embed for the match end event
+            embed = discord.Embed(description=f"**Match Over!** {msg}", color=color)
+
+            channel = self.bot.get_channel(self.channel_id)
+            if channel:
+                try:
+                    await channel.send(embed=embed)  # Send the match end message to the Discord channel
+                    print(f"Match end event sent to Discord: {msg}")
+                except Exception as e:
+                    print(f"Failed to send match end event to Discord: {e}")
             else:
                 print(f"Channel with ID {self.channel_id} not found.")
 
