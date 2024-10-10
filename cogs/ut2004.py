@@ -54,8 +54,13 @@ class UT2004Cog(commands.Cog):
         """Start the socket server to receive messages."""
         while not self.stop_socket_thread.is_set():  # Check for stop event
             try:
-                s = socket.create_server(self.socket_server)
+                # Create a socket server and set the SO_REUSEADDR option
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # Enable reuse of the socket address
+                s.bind(self.socket_server)
+                s.listen(5)
                 print("Socket server started, waiting for a connection...")
+
                 conn, addr = s.accept()
                 print(f"Connected to {addr}")
                 self.conn = conn  # Store the persistent connection
@@ -85,7 +90,8 @@ class UT2004Cog(commands.Cog):
                                                 return  # Exit the loop to stop processing further messages
 
                                             # Forward the message to Discord
-                                            asyncio.run_coroutine_threadsafe(self.forward_to_discord(message_data), self.bot.loop)
+                                            asyncio.run_coroutine_threadsafe(self.forward_to_discord(message_data),
+                                                                             self.bot.loop)
 
                                         except json.JSONDecodeError as e:
                                             print(f"Failed to parse JSON: {e}")
