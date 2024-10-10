@@ -160,7 +160,7 @@ class UT2004Cog(commands.Cog):
         color = self.get_color_by_team(team_index, username)
 
         # Create an embed to colorize the username
-        if msg_type == "Say":
+        if msg_type == "Say" or msg_type == "TeamSay":  # Handle both "Say" and "TeamSay"
             embed = discord.Embed(description=f"**{username}:** {msg}", color=color)
         elif msg_type == "Kill":
             embed = discord.Embed(description=f"**{msg}**", color=color)
