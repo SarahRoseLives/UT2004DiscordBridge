@@ -24,9 +24,9 @@ class UT2004Cog(commands.Cog):
         self.socket_server = (self.host, self.port)  # Socket server address
         self.user_colors = {}  # Dictionary to store usernames and their assigned colors
 
-        # Cache for tracking recently sent "Say" messages
-        self.recent_say_messages = set()  # Cache for "Say" messages
-        self.cache_limit = 100  # Set a limit for cache size to avoid excessive memory usage
+        # Cache for tracking recently sent messages with timestamps
+        self.recent_messages = {}  # Cache for all message types (msg_id: timestamp)
+        self.cache_duration = 5  # Time in seconds to consider messages as duplicates
 
         # Persistent socket connection
         self.conn = None
@@ -126,106 +126,60 @@ class UT2004Cog(commands.Cog):
                 self.user_colors[username] = self.get_random_color()
             return self.user_colors.get(username, discord.Color.dark_gray())  # Default color if no team info
 
+    def is_duplicate_message(self, message_id):
+        """Check if the message is a duplicate based on the timestamp."""
+        current_time = time.time()
+        # Check if the message_id exists and if it was sent within the last 5 seconds
+        if message_id in self.recent_messages:
+            last_time = self.recent_messages[message_id]
+            if current_time - last_time < self.cache_duration:
+                return True
+        # Otherwise, update the cache with the current timestamp
+        self.recent_messages[message_id] = current_time
+
+        # Clean up old messages from the cache (older than 5 seconds)
+        self.recent_messages = {k: v for k, v in self.recent_messages.items() if current_time - v < self.cache_duration}
+        return False
+
     async def forward_to_discord(self, message_data):
-        """Forwards a chat or kill message from the socket server to Discord."""
-        if message_data.get("type") == "Say":
-            username = message_data.get("sender")
-            msg = message_data.get("msg")
-            team_index = message_data.get("teamIndex", "-1")  # Default to -1 if not provided
+        """Forwards a chat, kill, flag, or match message from the socket server to Discord."""
+        msg_type = message_data.get("type")
+        username = message_data.get("sender", "Game")
+        msg = message_data.get("msg")
+        team_index = message_data.get("teamIndex", "-1")  # Default to -1 if not provided
 
-            # Generate a unique message ID for "Say" messages
-            message_id = self.get_message_id(username, msg)
+        # Generate a unique message ID for all message types
+        message_id = self.get_message_id(username, msg)
 
-            # Avoid duplicate "Say" messages by checking the cache
-            if message_id in self.recent_say_messages:
-                print(f"Duplicate Say message detected, skipping: {username}: {msg}")
-                return
+        # Avoid duplicate messages by checking the cache
+        if self.is_duplicate_message(message_id):
+            print(f"Duplicate {msg_type} message detected, skipping: {username}: {msg}")
+            return
 
-            # If not a duplicate, add to cache and enforce the limit
-            self.recent_say_messages.add(message_id)
-            if len(self.recent_say_messages) > self.cache_limit:
-                self.recent_say_messages.pop()
+        # Assign color based on the team index
+        color = self.get_color_by_team(team_index, username)
 
-            # Assign color based on the team index
-            color = self.get_color_by_team(team_index, username)
-
-            # Create an embed to colorize the username
+        # Create an embed to colorize the username
+        if msg_type == "Say":
             embed = discord.Embed(description=f"**{username}:** {msg}", color=color)
-
-            channel = self.bot.get_channel(self.channel_id)
-            if channel:
-                try:
-                    await channel.send(embed=embed)  # Send the message to the Discord channel
-                    print(f"Message sent to Discord: {username}: {msg}")
-                except Exception as e:
-                    print(f"Failed to send message to Discord: {e}")
-            else:
-                print(f"Channel with ID {self.channel_id} not found.")
-
-        elif message_data.get("type") == "Kill":
-            # Handle death/kill messages
-            game_event = message_data.get("sender", "Game")
-            msg = message_data.get("msg")
-            team_index = message_data.get("teamIndex", "-1")  # Default to -1 if not provided
-
-            # Send kill message without duplicate checking
-            color = self.get_color_by_team(team_index)
-
-            # Create an embed for the kill event
+        elif msg_type == "Kill":
             embed = discord.Embed(description=f"**{msg}**", color=color)
-
-            channel = self.bot.get_channel(self.channel_id)
-            if channel:
-                try:
-                    await channel.send(embed=embed)  # Send the kill message to the Discord channel
-                    print(f"Kill event sent to Discord: {msg}")
-                except Exception as e:
-                    print(f"Failed to send kill event to Discord: {e}")
-            else:
-                print(f"Channel with ID {self.channel_id} not found.")
-
-        elif message_data.get("type") == "FlagCap":
-            # Handle flag capture messages
-            msg = message_data.get("msg")
-            team_index = message_data.get("teamIndex", "-1")  # Default to -1 if not provided
-
-            # Send flag capture message without duplicate checking
-            color = self.get_color_by_team(team_index)
-
-            # Create an embed for the flag capture event
+        elif msg_type == "FlagCap":
             embed = discord.Embed(description=f"**Flag Capture:** {msg}", color=color)
-
-            channel = self.bot.get_channel(self.channel_id)
-            if channel:
-                try:
-                    await channel.send(embed=embed)  # Send the flag capture message to the Discord channel
-                    print(f"Flag capture event sent to Discord: {msg}")
-                except Exception as e:
-                    print(f"Failed to send flag capture event to Discord: {e}")
-            else:
-                print(f"Channel with ID {self.channel_id} not found.")
-
-        elif message_data.get("type") == "MatchEnd":
-            # Handle match end messages
-            winner_team = message_data.get("sender")  # This will be "Red" or "Blue"
-            msg = message_data.get("msg")
-            team_index = message_data.get("teamIndex")  # Get the team index from the message
-
-            # Get the color based on the winning team's index
-            color = self.get_color_by_team(team_index)
-
-            # Create an embed for the match end event
+        elif msg_type == "MatchEnd":
             embed = discord.Embed(description=f"**Match Over!** {msg}", color=color)
+        else:
+            return  # Ignore other message types if not handled
 
-            channel = self.bot.get_channel(self.channel_id)
-            if channel:
-                try:
-                    await channel.send(embed=embed)  # Send the match end message to the Discord channel
-                    print(f"Match end event sent to Discord: {msg}")
-                except Exception as e:
-                    print(f"Failed to send match end event to Discord: {e}")
-            else:
-                print(f"Channel with ID {self.channel_id} not found.")
+        channel = self.bot.get_channel(self.channel_id)
+        if channel:
+            try:
+                await channel.send(embed=embed)  # Send the message to the Discord channel
+                print(f"{msg_type} event sent to Discord: {msg}")
+            except Exception as e:
+                print(f"Failed to send {msg_type} event to Discord: {e}")
+        else:
+            print(f"Channel with ID {self.channel_id} not found.")
 
     async def send_message_to_socket(self, username, message_content):
         """Sends a message to the socket server."""
