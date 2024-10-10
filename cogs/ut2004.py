@@ -6,6 +6,7 @@ import json
 import configparser
 import asyncio
 import random
+import time
 
 
 class UT2004Cog(commands.Cog):
@@ -29,17 +30,29 @@ class UT2004Cog(commands.Cog):
 
         # Persistent socket connection
         self.conn = None
-        self.socket_thread = threading.Thread(target=self.start_socket_server, daemon=True)
-        self.socket_thread.start()  # Start the socket server in a separate thread
+        self.socket_thread = None
+        self.stop_socket_thread = threading.Event()  # Event to signal stopping the thread
+
+        self.start_socket_thread()
 
     def cog_unload(self):
-        # Implement logic to properly close the socket connection if needed
+        """Ensure proper closure of the socket connection and thread."""
+        self.stop_socket_thread.set()  # Signal the socket thread to stop
         if self.conn:
-            self.conn.close()
+            self.conn.close()  # Close the socket connection
+        if self.socket_thread:
+            self.socket_thread.join()  # Wait for the socket thread to cleanly exit
+
+    def start_socket_thread(self):
+        """Starts a new socket thread if one isn't already running."""
+        if not self.socket_thread or not self.socket_thread.is_alive():
+            self.stop_socket_thread.clear()  # Reset stop event
+            self.socket_thread = threading.Thread(target=self.start_socket_server, daemon=True)
+            self.socket_thread.start()  # Start the socket server in a separate thread
 
     def start_socket_server(self):
         """Start the socket server to receive messages."""
-        while True:
+        while not self.stop_socket_thread.is_set():  # Check for stop event
             try:
                 s = socket.create_server(self.socket_server)
                 print("Socket server started, waiting for a connection...")
@@ -48,7 +61,7 @@ class UT2004Cog(commands.Cog):
                 self.conn = conn  # Store the persistent connection
 
                 with conn:
-                    while True:
+                    while not self.stop_socket_thread.is_set():  # Keep running until stopped
                         try:
                             msg_buf = conn.recv(255)
                             if msg_buf:
@@ -88,10 +101,10 @@ class UT2004Cog(commands.Cog):
     async def reconnect_socket(self):
         """Reconnect to the socket server after 20 seconds."""
         await asyncio.sleep(20)  # Wait for 20 seconds
-        print("Attempting to reconnect to the socket server...")
-        self.start_socket_server()  # Attempt to restart the socket server
+        if not self.stop_socket_thread.is_set():  # Only reconnect if not stopping
+            print("Attempting to reconnect to the socket server...")
+            self.start_socket_thread()  # Restart the socket server in a new thread
 
-    # Hash function to avoid duplicate messages
     def get_message_id(self, username, msg):
         """Generate a unique identifier for each message."""
         return hash((username, msg))
@@ -109,7 +122,6 @@ class UT2004Cog(commands.Cog):
 
     async def forward_to_discord(self, message_data):
         """Forwards a chat or kill message from the socket server to Discord."""
-        # Check if the message is a chat ("Say"), kill event ("Kill"), flag capture ("FlagCap"), or match end ("MatchEnd")
         if message_data.get("type") == "Say":
             username = message_data.get("sender")
             msg = message_data.get("msg")
@@ -150,9 +162,6 @@ class UT2004Cog(commands.Cog):
             msg = message_data.get("msg")
             team_index = message_data.get("teamIndex", "-1")  # Default to -1 if not provided
 
-            # Generate a unique message ID for the kill event
-            message_id = self.get_message_id(game_event, msg)
-
             # Send kill message without duplicate checking
             color = self.get_color_by_team(team_index)
 
@@ -173,9 +182,6 @@ class UT2004Cog(commands.Cog):
             # Handle flag capture messages
             msg = message_data.get("msg")
             team_index = message_data.get("teamIndex", "-1")  # Default to -1 if not provided
-
-            # Generate a unique message ID for the flag capture event
-            message_id = self.get_message_id("FlagCap", msg)
 
             # Send flag capture message without duplicate checking
             color = self.get_color_by_team(team_index)
