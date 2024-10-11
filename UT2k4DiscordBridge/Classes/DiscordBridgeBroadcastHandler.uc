@@ -43,6 +43,14 @@ function BroadcastLocalized( Actor Sender, PlayerController Receiver, class<Loca
         if (mut.bBridgeFlagCaps && Switch==0) { //Switch 0 is flag captures (see CTFMessage class)
             mut.SendMsgToDiscord("FlagCap","Game",Message.Static.GetString(Switch,RelatedPRI_1,RelatedPRI_2,OptionalObject),GetTeamIndexFromPRI(RelatedPRI_1));
         }
+    } else if (ClassIsChildOf(Message,class'ONSOnslaughtMessage')) {
+        if (mut.bBridgeRoundEnd && (Switch==0 || Switch==1)) { //Red Team / Blue Team won the round
+            mut.SendMsgToDiscord("RoundEnd","Game",Message.Static.GetString(Switch,RelatedPRI_1,RelatedPRI_2,OptionalObject),Switch);
+        }
+    } else if (ClassIsChildOf(Message,class'xBombMessage')) {
+        if (mut.bBridgeBRScores && Switch==0) {
+            mut.SendMsgToDiscord("BRScore","Game",Message.Static.GetString(Switch,RelatedPRI_1,RelatedPRI_2,OptionalObject),GetTeamIndexFromPRI(RelatedPRI_1));
+        }
     //} else {
     //    mut.SendMsgToDiscord("LocalizedMessage",string(Message),Message.Static.GetString(Switch,RelatedPRI_1,RelatedPRI_2,OptionalObject),-1);
     }
