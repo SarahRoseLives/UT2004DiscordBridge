@@ -168,6 +168,10 @@ class UT2004Cog(commands.Cog):
             embed = discord.Embed(description=f"**Flag Capture:** {msg}", color=color)
         elif msg_type == "MatchEnd":
             embed = discord.Embed(description=f"**Match Over!** {msg}", color=color)
+        elif msg_type == "RoundEnd":
+            embed = discord.Embed(description=f"**Round Ended:** {msg}", color=color)
+        elif msg_type == "BRScore":
+            embed = discord.Embed(description=f"**Score Update:** {msg}", color=color)
         else:
             return  # Ignore other message types if not handled
 
