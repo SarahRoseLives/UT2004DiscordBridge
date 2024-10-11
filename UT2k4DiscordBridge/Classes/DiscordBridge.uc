@@ -7,7 +7,8 @@ var config bool bBridgeTeamSay;
 var config bool bBridgeKills;
 var config bool bBridgeFlagCaps;
 var config bool bBridgeMatchEnd;
-var config bool bBridgeServerTravel;
+var config bool bBridgeBRScores;
+var config bool bBridgeRoundEnd;
 var config int  chatR;
 var config int  chatG;
 var config int  chatB;
@@ -17,6 +18,8 @@ var DiscordBridgeBroadcastHandler chatHandler;
 
 simulated function PreBeginPlay()
 {
+    local DiscordBridgeEventTrigger dbet;
+
     if (Role!=ROLE_Authority)
     {
         return;
@@ -31,18 +34,50 @@ simulated function PreBeginPlay()
     chatHandler.Init(self);
     Level.Game.BroadcastHandler.RegisterBroadcastHandler(chatHandler);
 
-    Tag = 'EndGame'; //Lets the bridge receive a notification when the game ends
+    dbet = Spawn(class'DiscordBridgeEventTrigger');
+    dbet.Init(self,'EndGame',0.1); //Gets notifications for the end of the game
+
+    dbet = Spawn(class'DiscordBridgeEventTrigger');
+    dbet.Init(self,'EndRound'); //Gets notifications for the end of an Assault round
 }
 
-function Trigger( actor Other, pawn EventInstigator )
+function ExternalTrigger(name triggerTag)
 {
-    if (Tag=='EndGame' && bBridgeMatchEnd){
-        SetTimer(0.1,False);
+    log("ExternalTrigger on DiscordBridge from "$triggerTag);
+
+    if (triggerTag=='EndGame' && bBridgeMatchEnd){
+        HandleEndGame();
+    } else if (triggerTag=='EndRound' && bBridgeRoundEnd){
+        HandleEndRound();
     }
 }
 
-function Timer() {
-    HandleEndGame();
+function HandleEndRound()
+{
+    local ASGameInfo assGame;
+    local GameObjective curObj;
+    local int winTeamIdx;
+    local string endMsg;
+
+    assGame = ASGameInfo(Level.Game);
+    if (assGame!=None){
+        curObj = assGame.GetCurrentObjective();
+        if (curObj.bDisabled){
+            //attacking team won?
+            winTeamIdx=assGame.CurrentAttackingTeam;
+        } else {
+            //Defending team won?
+            if (assGame.CurrentAttackingTeam==0){
+                winTeamIdx=1;
+            } else {
+                winTeamIdx=0;
+            }
+        }
+
+        endMsg=ASGameReplicationInfo(assGame.GameReplicationInfo).GetRoundWinnerString();
+
+        SendMsgToDiscord("RoundEnd","Game",endMsg,winTeamIdx);
+    }
 }
 
 function HandleEndGame()
@@ -76,9 +111,7 @@ function HandleEndGame()
 function ServerTraveling(string URL, bool bItems)
 {
     if (discordLink!=None){
-        if (bBridgeServerTravel){
-            SendMsgToDiscord("ServerTravel","Game",URL,-1);
-        }
+        SendMsgToDiscord("ServerTravel","Game",URL,-1);
 
         discordLink.Close();
         discordLink.Destroy();
@@ -98,8 +131,9 @@ static function FillPlayInfo(PlayInfo PlayInfo) {
     PlayInfo.AddSetting("Discord Bridge", "bBridgeTeamSay", "Bridge Team Messages to Discord", 0, 1, "Check");
     PlayInfo.AddSetting("Discord Bridge", "bBridgeKills", "Notify Discord of Kills", 0, 1, "Check");
     PlayInfo.AddSetting("Discord Bridge", "bBridgeFlagCaps", "Notify Discord of Flag Captures", 0, 1, "Check");
-    PlayInfo.AddSetting("Discord Bridge", "bBridgeServerTravel", "Notify Discord of Server Travel", 0, 1, "Check");
     PlayInfo.AddSetting("Discord Bridge", "bBridgeMatchEnd", "Notify Discord of match end results", 0, 1, "Check");
+    PlayInfo.AddSetting("Discord Bridge", "bBridgeBRScores", "Notify Discord of Bombing Run scores", 0, 1, "Check");
+    PlayInfo.AddSetting("Discord Bridge", "bBridgeRoundEnd", "Notify Discord of round end results", 0, 1, "Check");
     PlayInfo.AddSetting("Discord Bridge", "chatR", "Discord Chat Red", 0, 2, "Text","3;1:255");
     PlayInfo.AddSetting("Discord Bridge", "chatG", "Discord Chat Green", 0, 2, "Text","3;1:255");
     PlayInfo.AddSetting("Discord Bridge", "chatB", "Discord Chat Blue", 0, 2, "Text","3;1:255");
@@ -146,8 +180,9 @@ defaultproperties
     bBridgeTeamSay=False
     bBridgeKills=False
     bBridgeFlagCaps=False
-    bBridgeServerTravel=False
     bBridgeMatchEnd=False
+    bBridgeBRScores=False
+    bBridgeRoundEnd=False
     discord_bridge_port=49321
     chatR=224
     chatG=1
