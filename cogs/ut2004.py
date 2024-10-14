@@ -68,13 +68,13 @@ class UT2004Cog(commands.Cog):
                 with conn:
                     while not self.stop_socket_thread.is_set():  # Keep running until stopped
                         try:
-                            msg_buf = conn.recv(255)
+                            msg_buf = conn.recv(2048)
                             if msg_buf:
                                 u_msg = msg_buf.decode("utf-8").strip()
                                 print(f"Received from socket: {u_msg}")
 
                                 # Split the incoming message into individual JSON objects
-                                messages = u_msg.split('\0')
+                                messages = u_msg.split(chr(4))
 
                                 for message in messages:
                                     if message:
