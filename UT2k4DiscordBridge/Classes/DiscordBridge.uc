@@ -106,12 +106,23 @@ function HandleEndGame()
     }
 }
 
+function string ExtractMapFromServerTravelURL(string URL)
+{
+    local int i;
+
+    i = InStr(URL,"?");
+
+    if (i==-1) return URL;
+
+    return Left(URL,i);
+}
+
 //This really makes sure the old discordLink is gone, since it seems like it used to kind of persist (despite being transient)
 //which prevented the client from sending messages to the right one.  This was an issue I noticed with my Crowd Control mutator
 function ServerTraveling(string URL, bool bItems)
 {
     if (discordLink!=None){
-        SendMsgToDiscord("ServerTravel","Game",URL,-1);
+        SendMsgToDiscord("ServerTravel","Game",ExtractMapFromServerTravelURL(URL),-1);
 
         discordLink.Close();
         discordLink.Destroy();

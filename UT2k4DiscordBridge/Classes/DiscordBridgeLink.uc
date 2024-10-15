@@ -6,9 +6,7 @@ var DiscordBridge bridgeMut;
 
 var int ListenPort;
 var IpAddr addr;
-var int ticker;
 var int reconnectTimer;
-var string pendingMsg;
 var bool enabled;
 
 const ReconDefault = 5;
@@ -19,33 +17,16 @@ function Init(DiscordBridge mut, string addr, int port)
     discord_bridge_addr = addr; 
     discord_bridge_port = port;
     enabled = True;
-    
-    //Initialize the pending message buffer
-    pendingMsg = "";
-    
-    //Initialize the ticker
-    ticker = 0;
 
     Resolve(discord_bridge_addr);
 
     reconnectTimer = ReconDefault;
-    SetTimer(0.1,True);
+    SetTimer(1,True);
 
 }
 
 simulated function Timer() {
     
-    ticker++;
-    if (IsConnected()) {
-        if (enabled){
-            ManualReceiveBinary();
-        }
-    }
-
-    if (ticker%10 != 0) {
-        return;
-    }
-
     if (!IsConnected()) {
         reconnectTimer-=1;
         if (reconnectTimer <= 0){
@@ -76,8 +57,6 @@ function SendHeartbeatResponse(string sender, string msg)
 {
     local string j, returnMsg;
     local class<Json> js;
-    local byte jbyte[255];
-    local int i;
     local bool validSender,validMsg;
 
     if (sender~="Discord") validSender = true;
@@ -95,6 +74,8 @@ function SendHeartbeatResponse(string sender, string msg)
         }
     }
 
+    returnMsg = TruncateMsg(returnMsg);
+
     js = class'Json';
 
     j = js.static.Start("Heartbeat");
@@ -104,20 +85,16 @@ function SendHeartbeatResponse(string sender, string msg)
 
     //log("Sending JSON message to Discord bridge: "$j);
 
-    for (i=0;i<Len(j);i++){
-        jbyte[i]=Asc(Mid(j,i,1));
-    }
-    
-    SendBinary(Len(j)+1,jbyte);
+    SendRawString(j);
 }
 
 function SendMsgToDiscord(string MsgType, string sender, string msg, int teamIdx)
 {
     local string j;
     local class<Json> js;
-    local byte jbyte[255];
-    local int i;
     js = class'Json';
+
+    msg = TruncateMsg(msg);
 
     j = js.static.Start(MsgType);
     js.static.Add(j,"sender",sender);
@@ -126,37 +103,20 @@ function SendMsgToDiscord(string MsgType, string sender, string msg, int teamIdx
     js.static.End(j);
 
     //log("Sending JSON message to Discord bridge: "$j);
-
-    for (i=0;i<Len(j);i++){
-        jbyte[i]=Asc(Mid(j,i,1));
-    }
-    
-    SendBinary(Len(j)+1,jbyte);
+    SendRawString(j);
 }
 
-
-//I cannot believe I had to manually write my own version of ReceivedBinary
-simulated function ManualReceiveBinary() {
-    local byte B[255]; //I have to use a 255 length array even if I only want to read 1
-    local int count,i;
-    //PlayerMessage("Manually reading, have "$DataPending$" bytes pending");
-    
-    if (DataPending!=0) {
-        count = ReadBinary(255,B);
-        for (i = 0; i < count; i++) {
-            if (B[i] == 0) {
-                if (Len(pendingMsg)>0){
-                    handleMessage(pendingMsg);
-                }
-                pendingMsg="";
-            } else {
-                pendingMsg = pendingMsg $ Chr(B[i]);
-                //PlayerMessage("ReceivedBinary: " $ B[i]);
-            }
-        }
-    }
-    
+function String TruncateMsg(string msg)
+{
+    return Mid(msg,0,400);
 }
+
+function SendRawString(string msg)
+{
+    msg=msg$chr(4); //"End of Transmission" character as delimiter
+    SendText(msg);
+}
+
 event Opened(){
     Level.Game.Broadcast(self,"Discord Bridge connection opened");
 }
@@ -165,6 +125,11 @@ event Closed(){
     Level.Game.Broadcast(self,"Discord Bridge connection closed");
     ListenPort = 0;
     reconnectTimer = ReconDefault;
+}
+
+event ReceivedText( string Text )
+{
+    handleMessage(Text);
 }
 
 event Destroyed(){
@@ -191,12 +156,6 @@ function Resolved( IpAddr Addr )
 
     }
 
-    //Using manual binary reading, which is handled by ManualReceiveBinary()
-    //This means that we can handle if multiple Discord Bridge messages come in
-    //between reads.
-    LinkMode=MODE_Binary;
-    ReceiveMode = RMODE_Manual;
-
 }
 function ResolveFailed()
 {
@@ -206,6 +165,6 @@ function ResolveFailed()
 
 defaultproperties
 {
-    LinkMode=MODE_Binary
-    ReceiveMode=RMODE_Manual
+    LinkMode=MODE_Text
+    ReceiveMode=RMODE_Event
 }
