@@ -101,12 +101,12 @@ class UT2004Cog(commands.Cog):
 
             except Exception as e:
                 print(f"Failed to start socket server: {e}")
-                print("Retrying in 5 seconds...")
-                time.sleep(5)  # Wait before retrying to establish the socket server
+                print("Retrying in 15 seconds...")
+                time.sleep(15)  # Wait before retrying to establish the socket server
 
     async def reconnect_socket(self):
-        """Reconnect to the socket server after 10 seconds."""
-        await asyncio.sleep(10)  # Wait for 10 seconds
+        """Reconnect to the socket server after 15 seconds."""
+        await asyncio.sleep(15)  # Wait for 15 seconds
         if not self.stop_socket_thread.is_set():  # Only reconnect if not stopping
             print("Attempting to reconnect to the socket server...")
             self.start_socket_thread()  # Restart the socket server in a new thread
